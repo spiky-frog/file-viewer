@@ -1,0 +1,93 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>File Viewer</title>
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #f5f5f7;
+      color: #1d1d1f;
+    }
+
+    .container {
+      max-width: 650px;
+      margin: 70px auto;
+      padding: 24px;
+      text-align: center;
+    }
+
+    h1 { font-size: 32px; }
+
+    .subtitle { color: #666; }
+
+    .card {
+      background: white;
+      border-radius: 16px;
+      padding: 30px;
+      margin-top: 30px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+    }
+
+    button {
+      background: #007aff;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      padding: 14px 24px;
+      font-size: 16px;
+      cursor: pointer;
+      margin: 8px;
+    }
+
+    button:hover { background: #0066d6; }
+
+    #status {
+      margin-top: 20px;
+      color: #666;
+    }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <h1>File Viewer</h1>
+    <p class="subtitle">
+      Send files from your phone to your computer.
+    </p>
+
+    <div class="card">
+      <h2>Choose your device</h2>
+      <p>How are you using File Viewer?</p>
+
+      <button onclick="selectMode('computer')">
+        I'm on my computer
+      </button>
+
+      <button onclick="selectMode('phone')">
+        I'm on my phone
+      </button>
+
+      <p id="status">Waiting for selection...</p>
+    </div>
+  </main>
+
+  <script>
+    function selectMode(mode) {
+      const status = document.getElementById('status');
+
+      if (mode === 'computer') {
+        status.textContent =
+          'Computer mode selected. Ready for pairing setup.';
+      } else {
+        status.textContent =
+          'Phone mode selected. Ready for file selection.';
+      }
+    }
+  </script>
+</body>
+</html>
