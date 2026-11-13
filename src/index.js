@@ -6,11 +6,30 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
+    // Existing health check
     if (url.pathname === "/api/health") {
       return Response.json({
         status: "ok",
         service: "file-viewer"
       });
+    }
+
+    // Test communication with our Durable Object
+    if (url.pathname === "/api/room-health") {
+      try {
+        const room = env.PAIRING_ROOM.getByName("health-check");
+
+        const result = await room.checkHealth();
+
+        return Response.json(result);
+      } catch (error) {
+        console.error("Durable Object health check failed", error);
+
+        return Response.json(
+          { status: "error", message: "Room unavailable" },
+          { status: 500 }
+        );
+      }
     }
 
     return new Response("Not Found", {
@@ -25,10 +44,10 @@ export class PairingRoom extends DurableObject {
     super(ctx, env);
   }
 
-  async fetch(request) {
-    return Response.json({
+  async checkHealth() {
+    return {
       status: "ok",
       service: "pairing-room"
-    });
+    };
   }
 }
