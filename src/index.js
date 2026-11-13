@@ -21,11 +21,11 @@ async function hashToken(token) {
   ).join("");
 }
 
-// Main Cloudflare Worker
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
+    // Basic health check
     if (url.pathname === "/api/health") {
       return Response.json({
         status: "ok",
@@ -33,13 +33,13 @@ export default {
       });
     }
 
+    // Durable Object health check
     if (url.pathname === "/api/room-health") {
       try {
         const room = env.PAIRING_ROOM.getByName("health-check");
         return Response.json(await room.checkHealth());
       } catch (error) {
         console.error("Room health check failed", error);
-
         return Response.json(
           { status: "error", message: "Room unavailable" },
           { status: 500 }
@@ -47,18 +47,19 @@ export default {
       }
     }
 
-    // Create a temporary pairing session
+    // Require requests from our website for session operations
+    if (url.pathname.startsWith("/api/sessions")) {
+      if (request.headers.get("Origin") !== url.origin) {
+        return new Response("Forbidden", { status: 403 });
+      }
+    }
+
+    // Create pairing session
     if (url.pathname === "/api/sessions") {
       if (request.method !== "POST") {
         return new Response("Method Not Allowed", {
-          status: 405,
-          headers: { Allow: "POST" }
+          status: 405
         });
-      }
-
-      // Only allow requests originating from our website
-      if (request.headers.get("Origin") !== url.origin) {
-        return new Response("Forbidden", { status: 403 });
       }
 
       try {
@@ -68,24 +69,76 @@ export default {
         const expiresAt = Date.now() + SESSION_DURATION;
 
         const room = env.PAIRING_ROOM.getByName(sessionId);
-
         await room.createSession(tokenHash, expiresAt);
 
         return Response.json(
           { sessionId, pairingToken, expiresAt },
           {
             status: 201,
-            headers: {
-              "Cache-Control": "no-store"
-            }
+            headers: { "Cache-Control": "no-store" }
           }
         );
       } catch (error) {
         console.error("Session creation failed", error);
-
         return Response.json(
           { error: "Could not create session" },
           { status: 500 }
+        );
+      }
+    }
+
+    // Join an existing session
+    const joinMatch = url.pathname.match(
+      /^\/api\/sessions\/([0-9a-f-]{36})\/join$/
+    );
+
+    if (joinMatch) {
+      if (request.method !== "POST") {
+        return new Response("Method Not Allowed", {
+          status: 405
+        });
+      }
+
+      try {
+        const body = await request.json();
+        const token = body?.pairingToken;
+
+        if (
+          typeof token !== "string" ||
+          !/^[0-9a-f]{64}$/.test(token)
+        ) {
+          return Response.json(
+            { error: "Invalid pairing request" },
+            { status: 400 }
+          );
+        }
+
+        const sessionId = joinMatch[1];
+        const tokenHash = await hashToken(token);
+
+        const room = env.PAIRING_ROOM.getByName(sessionId);
+        const result = await room.joinSession(tokenHash);
+
+        if (!result.success) {
+          return Response.json(
+            { error: "Invalid or unavailable session" },
+            {
+              status: 403,
+              headers: { "Cache-Control": "no-store" }
+            }
+          );
+        }
+
+        return Response.json(
+          { success: true, message: "Device paired" },
+          { headers: { "Cache-Control": "no-store" } }
+        );
+
+      } catch (error) {
+        console.error("Join request failed", error);
+        return Response.json(
+          { error: "Invalid pairing request" },
+          { status: 400 }
         );
       }
     }
@@ -94,7 +147,6 @@ export default {
   }
 };
 
-// Durable Object for each pairing session
 export class PairingRoom extends DurableObject {
   async checkHealth() {
     return {
@@ -104,21 +156,50 @@ export class PairingRoom extends DurableObject {
   }
 
   async createSession(tokenHash, expiresAt) {
-    // Save session details in the room's private storage
     await this.ctx.storage.put("session", {
       tokenHash,
       expiresAt,
-      joined: false
+      joined: false,
+      failedAttempts: 0
     });
 
-    // Schedule automatic cleanup
     await this.ctx.storage.setAlarm(expiresAt);
-
     return { created: true };
   }
 
+  async joinSession(tokenHash) {
+    const session = await this.ctx.storage.get("session");
+
+    if (!session || Date.now() >= session.expiresAt) {
+      return { success: false };
+    }
+
+    // Only one phone can join
+    if (session.joined) {
+      return { success: false };
+    }
+
+    // Limit incorrect pairing attempts
+    if ((session.failedAttempts || 0) >= 10) {
+      return { success: false };
+    }
+
+    if (session.tokenHash !== tokenHash) {
+      session.failedAttempts =
+        (session.failedAttempts || 0) + 1;
+
+      await this.ctx.storage.put("session", session);
+      return { success: false };
+    }
+
+    // Mark the session as paired
+    session.joined = true;
+    await this.ctx.storage.put("session", session);
+
+    return { success: true };
+  }
+
   async alarm() {
-    // Delete the expired session's stored data
     await this.ctx.storage.deleteAll();
   }
 }
