@@ -333,8 +333,74 @@ export class PairingRoom extends DurableObject {
     });
   }
 
+  
   async webSocketMessage(ws, message) {
-    // File-transfer signalling will be added later.
+    // Accept only small text messages.
+    if (
+      typeof message !== "string" ||
+      message.length > 1024
+    ) {
+      return;
+    }
+
+    // Make sure the session is still valid.
+    const session = await this.ctx.storage.get("session");
+
+    if (!session || Date.now() >= session.expiresAt) {
+      ws.close(1008, "Session expired");
+      return;
+    }
+
+    // Determine the sender's authenticated role.
+    const tags = this.ctx.getTags(ws);
+
+    const role = tags.includes("computer")
+      ? "computer"
+      : tags.includes("phone")
+        ? "phone"
+        : null;
+
+    if (!role) {
+      ws.close(1008, "Unknown device");
+      return;
+    }
+
+    let data;
+
+    try {
+      data = JSON.parse(message);
+    } catch {
+      return;
+    }
+
+    // Only allow our initial test-message format.
+    if (
+      data === null ||
+      typeof data !== "object" ||
+      Array.isArray(data) ||
+      data.type !== "test-message" ||
+      typeof data.text !== "string" ||
+      data.text.length === 0 ||
+      data.text.length > 200
+    ) {
+      return;
+    }
+
+    // Send the message to the other device.
+    const recipientRole =
+      role === "computer" ? "phone" : "computer";
+
+    const outgoingMessage = JSON.stringify({
+      type: "test-message",
+      from: role,
+      text: data.text
+    });
+
+    for (const recipient of this.ctx.getWebSockets(recipientRole)) {
+      if (recipient.readyState === WebSocket.OPEN) {
+        recipient.send(outgoingMessage);
+      }
+    }
   }
 
   async checkHealth() {
