@@ -7,9 +7,7 @@
   <title>File Viewer</title>
 
   <style>
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     body {
       margin: 0;
@@ -25,20 +23,15 @@
       text-align: center;
     }
 
-    h1 {
-      font-size: 32px;
-    }
-
-    .subtitle {
-      color: #666;
-    }
+    h1 { font-size: 32px; }
+    .subtitle { color: #666; }
 
     .card {
       background: white;
       border-radius: 16px;
       padding: 30px;
       margin-top: 30px;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.05);
     }
 
     button {
@@ -52,9 +45,7 @@
       margin: 8px;
     }
 
-    button:hover {
-      background: #0066d6;
-    }
+    button:hover { background: #0066d6; }
 
     button:disabled {
       opacity: 0.5;
@@ -80,18 +71,14 @@
       overflow-wrap: anywhere;
     }
 
-    .details p {
-      margin: 12px 0 6px;
-    }
+    .details p { margin: 12px 0 6px; }
 
     code {
       font-size: 12px;
       word-break: break-all;
     }
 
-    .secret {
-      user-select: all;
-    }
+    .secret { user-select: all; }
 
     .status {
       margin-top: 20px;
@@ -104,13 +91,53 @@
       font-weight: 600;
     }
 
-    .error {
-      color: #c62828;
+    .error { color: #c62828; }
+
+    .messages {
+      height: 200px;
+      overflow-y: auto;
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      padding: 12px;
+      text-align: left;
+      background: #fafafa;
+      margin: 15px 0;
     }
 
-    [hidden] {
-      display: none !important;
+    .message {
+      padding: 10px;
+      margin: 8px 0;
+      background: #e8e8ed;
+      border-radius: 8px;
+      overflow-wrap: anywhere;
     }
+
+    .message.mine {
+      background: #dcecff;
+    }
+
+    .message strong {
+      display: block;
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+
+    .message-form {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .message-form input {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .message-form button {
+      margin: 0;
+    }
+
+    [hidden] { display: none !important; }
 
     @media (max-width: 480px) {
       .container {
@@ -118,13 +145,16 @@
         padding: 15px;
       }
 
-      .card {
-        padding: 20px;
-      }
+      .card { padding: 20px; }
 
       button {
         width: 100%;
         margin: 8px 0;
+      }
+
+      .message-form button {
+        width: auto;
+        margin: 0;
       }
     }
   </style>
@@ -202,7 +232,7 @@
         </form>
       </div>
 
-      <!-- Status -->
+      <!-- Connection status -->
       <p
         id="status"
         class="status"
@@ -212,10 +242,34 @@
         Waiting for selection...
       </p>
 
+      <!-- Temporary two-way messaging test -->
+      <section id="messaging" hidden>
+        <h2>Connection test</h2>
+        <p class="subtitle">
+          Send a message to your other device.
+        </p>
+
+        <div id="messages" class="messages"
+             aria-label="Messages"></div>
+
+        <form id="message-form" class="message-form">
+          <input
+            id="message-input"
+            type="text"
+            placeholder="Type a test message..."
+            maxlength="200"
+            required
+          >
+
+          <button id="send-button" type="submit">
+            Send
+          </button>
+        </form>
+      </section>
+
       <button id="back-button" hidden>
         Back
       </button>
-
     </div>
   </main>
 
@@ -224,12 +278,8 @@
 
     let currentSession = null;
     let phoneSession = null;
-
     let pairingSocket = null;
     let phoneSocket = null;
-
-    // Prevent outdated asynchronous operations
-    // from changing the current interface.
     let viewGeneration = 0;
 
     function showView(view) {
@@ -241,7 +291,6 @@
 
     function setStatus(message, type = "") {
       const status = $("status");
-
       status.textContent = message;
       status.className = "status";
 
@@ -264,7 +313,6 @@
       );
     }
 
-    // Close the computer's WebSocket.
     function disconnectComputerSocket() {
       if (pairingSocket) {
         const socket = pairingSocket;
@@ -273,7 +321,6 @@
       }
     }
 
-    // Close the phone's WebSocket.
     function disconnectPhoneSocket() {
       if (phoneSocket) {
         const socket = phoneSocket;
@@ -282,7 +329,58 @@
       }
     }
 
-    // Computer WebSocket connection
+    function activeSocket() {
+      return pairingSocket || phoneSocket;
+    }
+
+    // Show the message test only with an open socket.
+    function enableMessaging() {
+      $("messaging").hidden = false;
+      $("send-button").disabled = false;
+      $("message-input").disabled = false;
+    }
+
+    function disableMessaging() {
+      $("messaging").hidden = true;
+      $("send-button").disabled = true;
+      $("message-input").disabled = true;
+    }
+
+    // Safely add a message without interpreting HTML.
+    function addMessage(from, text, mine = false) {
+      const item = document.createElement("div");
+      item.className = mine ? "message mine" : "message";
+
+      const heading = document.createElement("strong");
+      heading.textContent = mine
+        ? "You"
+        : from === "phone"
+          ? "iPhone"
+          : "Computer";
+
+      const content = document.createElement("span");
+      content.textContent = text;
+
+      item.append(heading, content);
+      $("messages").appendChild(item);
+
+      $("messages").scrollTop =
+        $("messages").scrollHeight;
+    }
+
+    function handleMessage(message) {
+      if (message.type === "test-message") {
+        if (
+          typeof message.text === "string" &&
+          (message.from === "phone" ||
+           message.from === "computer")
+        ) {
+          addMessage(message.from, message.text);
+        }
+      }
+    }
+
+    // Computer's authenticated WebSocket.
     function connectComputerSocket() {
       if (!currentSession) return;
 
@@ -308,6 +406,7 @@
         setStatus(
           "Ready! Open File Viewer on your phone."
         );
+        enableMessaging();
       };
 
       socket.onmessage = event => {
@@ -329,6 +428,7 @@
             );
           }
 
+          handleMessage(message);
         } catch (error) {
           console.error(
             "Invalid computer WebSocket message:",
@@ -339,17 +439,14 @@
 
       socket.onerror = error => {
         if (pairingSocket !== socket) return;
-
-        console.error(
-          "Computer WebSocket error:",
-          error
-        );
+        console.error("Computer WebSocket error:", error);
       };
 
       socket.onclose = () => {
         if (pairingSocket !== socket) return;
 
         pairingSocket = null;
+        disableMessaging();
 
         setStatus(
           "Computer connection closed. Create a new session.",
@@ -358,7 +455,7 @@
       };
     }
 
-    // Phone WebSocket connection
+    // Phone's authenticated WebSocket.
     function connectPhoneSocket() {
       if (!phoneSession) return;
 
@@ -377,7 +474,7 @@
       phoneSocket = socket;
 
       setStatus(
-        "Pairing accepted. Establishing real-time connection..."
+        "Pairing accepted. Establishing connection..."
       );
 
       socket.onopen = () => {
@@ -387,6 +484,7 @@
           "Connected to pairing service!",
           "success"
         );
+        enableMessaging();
       };
 
       socket.onmessage = event => {
@@ -405,6 +503,7 @@
             );
           }
 
+          handleMessage(message);
         } catch (error) {
           console.error(
             "Invalid phone WebSocket message:",
@@ -415,26 +514,23 @@
 
       socket.onerror = error => {
         if (phoneSocket !== socket) return;
-
-        console.error(
-          "Phone WebSocket error:",
-          error
-        );
+        console.error("Phone WebSocket error:", error);
       };
 
       socket.onclose = () => {
         if (phoneSocket !== socket) return;
 
         phoneSocket = null;
+        disableMessaging();
 
         setStatus(
-          "Phone connection closed. Create a new pairing session.",
+          "Phone connection closed. Create a new session.",
           "error"
         );
       };
     }
 
-    // Computer creates pairing session
+    // Create a session on the computer.
     $("computer-button").addEventListener(
       "click",
       async () => {
@@ -478,7 +574,6 @@
           if (generation !== viewGeneration) return;
 
           console.error(error);
-
           setStatus(
             "Session creation failed. Please try again.",
             "error"
@@ -489,16 +584,15 @@
       }
     );
 
-    // Phone mode
+    // Select phone mode.
     $("phone-button").addEventListener("click", () => {
       showView("phone");
-
       setStatus(
         "Enter the pairing details from your computer."
       );
     });
 
-    // Phone joins pairing session
+    // Join a session on the phone.
     $("pairing-form").addEventListener(
       "submit",
       async event => {
@@ -507,15 +601,12 @@
         const generation = viewGeneration;
 
         const sessionId =
-          $("phone-session-id")
-            .value.trim().toLowerCase();
+          $("phone-session-id").value.trim().toLowerCase();
 
         const pairingToken =
-          $("phone-token")
-            .value.trim().toLowerCase();
+          $("phone-token").value.trim().toLowerCase();
 
         const button = $("join-button");
-
         button.disabled = true;
 
         setStatus("Pairing with computer...");
@@ -528,9 +619,7 @@
               headers: {
                 "Content-Type": "application/json"
               },
-              body: JSON.stringify({
-                pairingToken
-              }),
+              body: JSON.stringify({ pairingToken }),
               cache: "no-store"
             }
           );
@@ -551,35 +640,59 @@
             throw new Error("Invalid pairing response");
           }
 
-          // Store phone credential in memory only.
           phoneSession = {
             sessionId,
             phoneToken: result.phoneToken
           };
 
-          // Hide the form and clear its secrets.
           $("pairing-form").hidden = true;
           $("pairing-form").reset();
 
-          // Authenticate the phone's WebSocket.
           connectPhoneSocket();
 
         } catch (error) {
           if (generation !== viewGeneration) return;
 
           console.error(error);
-
           setStatus(
-            "Could not connect. Check the pairing details.",
+            "Could not connect. Check pairing details.",
             "error"
           );
-
           button.disabled = false;
         }
       }
     );
 
-    // Return to device selection
+    // Send a message through the authenticated WebSocket.
+    $("message-form").addEventListener(
+      "submit",
+      event => {
+        event.preventDefault();
+
+        const socket = activeSocket();
+        const input = $("message-input");
+        const text = input.value.trim();
+
+        if (
+          !socket ||
+          socket.readyState !== WebSocket.OPEN ||
+          !text ||
+          text.length > 200
+        ) {
+          return;
+        }
+
+        socket.send(JSON.stringify({
+          type: "test-message",
+          text
+        }));
+
+        addMessage("self", text, true);
+        input.value = "";
+      }
+    );
+
+    // Return to device selection.
     $("back-button").addEventListener("click", () => {
       viewGeneration++;
 
@@ -592,20 +705,24 @@
       $("session-id").textContent = "";
       $("pairing-token").textContent = "";
       $("session-expiry").textContent = "";
+      $("messages").replaceChildren();
 
       $("pairing-form").reset();
       $("pairing-form").hidden = false;
       $("join-button").disabled = false;
+      $("message-input").value = "";
 
+      disableMessaging();
       setStatus("Waiting for selection...");
       showView("selection");
     });
 
-    // Close connections when leaving the website.
     window.addEventListener("pagehide", () => {
       disconnectComputerSocket();
       disconnectPhoneSocket();
     });
+
+    disableMessaging();
   </script>
 </body>
 </html>
