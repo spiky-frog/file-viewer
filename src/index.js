@@ -86,6 +86,39 @@ export default {
         );
       }
     }
+    
+    // Connect computer to its pairing room via WebSocket
+    const wsMatch = url.pathname.match(
+      /^\/api\/sessions\/([0-9a-f-]{36})\/ws$/
+    );
+
+    if (wsMatch) {
+      if (
+        request.method !== "GET" ||
+        request.headers.get("Upgrade")?.toLowerCase()
+          !== "websocket"
+      ) {
+        return new Response("WebSocket upgrade required", {
+          status: 426
+        });
+      }
+
+      const protocols = (
+        request.headers.get("Sec-WebSocket-Protocol") || ""
+      ).split(",").map(value => value.trim());
+
+      if (
+        protocols.length !== 2 ||
+        protocols[0] !== "file-viewer" ||
+        !/^token\.[0-9a-f]{64}$/.test(protocols[1])
+      ) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      const room = env.PAIRING_ROOM.getByName(wsMatch[1]);
+
+      return room.fetch(request);
+    }
 
     // Check whether a phone has joined the session
     const statusMatch = url.pathname.match(
@@ -203,6 +236,68 @@ export default {
 };
 
 export class PairingRoom extends DurableObject {
+  
+  async fetch(request) {
+    const protocols = (
+      request.headers.get("Sec-WebSocket-Protocol") || ""
+    ).split(",").map(value => value.trim());
+
+    if (
+      request.headers.get("Upgrade")?.toLowerCase()
+        !== "websocket" ||
+      protocols.length !== 2 ||
+      protocols[0] !== "file-viewer" ||
+      !/^token\.[0-9a-f]{64}$/.test(protocols[1])
+    ) {
+      return new Response("Unauthorized", { status: 401 });
+    }
+
+    const tokenHash = await hashToken(
+      protocols[1].slice("token.".length)
+    );
+
+    const session = await this.ctx.storage.get("session");
+
+    if (
+      !session ||
+      Date.now() >= session.expiresAt ||
+      session.tokenHash !== tokenHash
+    ) {
+      return new Response("Session unavailable", {
+        status: 403
+      });
+    }
+
+    // Allow only one computer WebSocket per session.
+    if (this.ctx.getWebSockets("computer").length > 0) {
+      return new Response("Computer already connected", {
+        status: 409
+      });
+    }
+
+    const pair = new WebSocketPair();
+    const [client, server] = Object.values(pair);
+
+    this.ctx.acceptWebSocket(server, ["computer"]);
+
+    server.send(JSON.stringify({
+      type: "session-status",
+      joined: session.joined
+    }));
+
+    return new Response(null, {
+      status: 101,
+      webSocket: client,
+      headers: {
+        "Sec-WebSocket-Protocol": "file-viewer"
+      }
+    });
+  }
+
+  async webSocketMessage(ws, message) {
+    // File-transfer signalling will be added later.
+  }
+
   async checkHealth() {
     return {
       status: "ok",
@@ -251,7 +346,19 @@ export class PairingRoom extends DurableObject {
     session.joined = true;
     await this.ctx.storage.put("session", session);
 
+    // Notify the connected computer immediately.
+    for (const ws of this.ctx.getWebSockets("computer")) {
+      try {
+        ws.send(JSON.stringify({
+          type: "phone-joined"
+        }));
+      } catch (error) {
+        console.error("WebSocket notification failed", error);
+      }
+    }
+
     return { success: true };
+
   }
 
   async getSessionStatus(tokenHash) {
