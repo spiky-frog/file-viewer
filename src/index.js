@@ -229,8 +229,16 @@ export default {
         }
 
         return Response.json(
-          { success: true, message: "Device paired" },
-          { headers: { "Cache-Control": "no-store" } }
+          {
+            success: true,
+            message: "Device paired",
+            phoneToken: result.phoneToken
+          },
+          {
+            headers: {
+              "Cache-Control": "no-store"
+            }
+          }
         );
 
       } catch (error) {
@@ -354,8 +362,14 @@ export class PairingRoom extends DurableObject {
       return { success: false };
     }
 
+    // Generate a dedicated WebSocket credential for the phone
+    const phoneToken = randomToken();
+    const phoneHash = await hashToken(phoneToken);
+    
     // Mark the session as paired
     session.joined = true;
+    session.phoneHash = phoneHash;
+    
     await this.ctx.storage.put("session", session);
 
     // Notify the connected computer immediately.
@@ -369,7 +383,7 @@ export class PairingRoom extends DurableObject {
       }
     }
 
-    return { success: true };
+    return { success: true, phoneToken };
 
   }
 
