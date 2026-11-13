@@ -87,6 +87,61 @@ export default {
       }
     }
 
+    // Check whether a phone has joined the session
+    const statusMatch = url.pathname.match(
+      /^\/api\/sessions\/([0-9a-f-]{36})\/status$/
+    );
+
+    if (statusMatch) {
+      if (request.method !== "POST") {
+        return new Response("Method Not Allowed", {
+          status: 405
+        });
+      }
+
+      try {
+        const body = await request.json();
+        const token = body?.pairingToken;
+
+        if (
+          typeof token !== "string" ||
+          !/^[0-9a-f]{64}$/.test(token)
+        ) {
+          return Response.json(
+            { error: "Invalid request" },
+            { status: 400 }
+          );
+        }
+
+        const tokenHash = await hashToken(token);
+
+        const room = env.PAIRING_ROOM.getByName(
+          statusMatch[1]
+        );
+
+        const result = await room.getSessionStatus(tokenHash);
+
+        if (!result) {
+          return Response.json(
+            { error: "Session unavailable" },
+            { status: 403 }
+          );
+        }
+
+        return Response.json(result, {
+          headers: { "Cache-Control": "no-store" }
+        });
+
+      } catch (error) {
+        console.error("Status check failed", error);
+
+        return Response.json(
+          { error: "Could not check session" },
+          { status: 400 }
+        );
+      }
+    }
+
     // Join an existing session
     const joinMatch = url.pathname.match(
       /^\/api\/sessions\/([0-9a-f-]{36})\/join$/
@@ -197,6 +252,27 @@ export class PairingRoom extends DurableObject {
     await this.ctx.storage.put("session", session);
 
     return { success: true };
+  }
+
+  async getSessionStatus(tokenHash) {
+    const session = await this.ctx.storage.get("session");
+
+    if (!session) {
+      return null;
+    }
+
+    if (Date.now() >= session.expiresAt) {
+      return null;
+    }
+
+    if (session.tokenHash !== tokenHash) {
+      return null;
+    }
+
+    return {
+      joined: session.joined,
+      expiresAt: session.expiresAt
+    };
   }
 
   async alarm() {
