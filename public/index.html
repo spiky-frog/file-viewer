@@ -1,281 +1,84 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
   <title>File Viewer</title>
-
   <style>
     * { box-sizing: border-box; }
-
-    body {
-      margin: 0;
-      font-family: system-ui, -apple-system, sans-serif;
-      background: #f5f5f7;
-      color: #1d1d1f;
-    }
-
-    .container {
-      max-width: 650px;
-      margin: 60px auto;
-      padding: 20px;
-      text-align: center;
-    }
-
+    body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background: #f5f5f7; color: #1d1d1f; }
+    .container { max-width: 650px; margin: 60px auto; padding: 20px; text-align: center; }
     h1 { font-size: 32px; }
     .subtitle { color: #666; }
-
-    .card {
-      background: white;
-      border-radius: 16px;
-      padding: 30px;
-      margin-top: 30px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.05);
-    }
-
-    button {
-      background: #007aff;
-      color: white;
-      border: none;
-      border-radius: 10px;
-      padding: 14px 24px;
-      font-size: 16px;
-      cursor: pointer;
-      margin: 8px;
-    }
-
+    .card { background: white; border-radius: 16px; padding: 30px; margin-top: 30px; box-shadow: 0 4px 20px rgba(0,0,0,.05); }
+    button { background: #007aff; color: white; border: 0; border-radius: 10px; padding: 14px 24px; font-size: 16px; cursor: pointer; margin: 8px; }
     button:hover { background: #0066d6; }
-
-    button:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-
-    input {
-      display: block;
-      width: 100%;
-      padding: 12px;
-      margin: 12px 0;
-      border: 1px solid #ccc;
-      border-radius: 8px;
-      font-size: 14px;
-    }
-
-    .details {
-      padding: 16px;
-      margin-top: 20px;
-      background: #f5f5f7;
-      border-radius: 10px;
-      text-align: left;
-      overflow-wrap: anywhere;
-    }
-
-    .details p { margin: 12px 0 6px; }
-
-    code {
-      font-size: 12px;
-      word-break: break-all;
-    }
-
-    .secret { user-select: all; }
-
-    .status {
-      margin-top: 20px;
-      color: #555;
-      overflow-wrap: anywhere;
-    }
-
-    .success {
-      color: #16803c;
-      font-weight: 600;
-    }
-
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .details { padding: 16px; margin-top: 20px; background: #f5f5f7; border-radius: 10px; overflow-wrap: anywhere; }
+    .status { margin-top: 20px; color: #555; overflow-wrap: anywhere; }
+    .success { color: #16803c; font-weight: 600; }
     .error { color: #c62828; }
-
-    .messages {
-      height: 200px;
-      overflow-y: auto;
-      border: 1px solid #ddd;
-      border-radius: 10px;
-      padding: 12px;
-      text-align: left;
-      background: #fafafa;
-      margin: 15px 0;
-    }
-
-    .message {
-      padding: 10px;
-      margin: 8px 0;
-      background: #e8e8ed;
-      border-radius: 8px;
-      overflow-wrap: anywhere;
-    }
-
-    .message.mine {
-      background: #dcecff;
-    }
-
-    .message strong {
-      display: block;
-      font-size: 12px;
-      margin-bottom: 4px;
-    }
-
-    .message-form {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-    }
-
-    .message-form input {
-      flex: 1;
-      min-width: 0;
-    }
-
-    .message-form button {
-      margin: 0;
-    }
-
+    #qr-code { display: flex; justify-content: center; padding: 14px; margin: 14px auto; background: #fff; border-radius: 12px; width: fit-content; max-width: 100%; }
+    #qr-code img, #qr-code canvas { max-width: 100%; height: auto; }
+    .messages { height: 200px; overflow-y: auto; border: 1px solid #ddd; border-radius: 10px; padding: 12px; text-align: left; background: #fafafa; margin: 15px 0; }
+    .message { padding: 10px; margin: 8px 0; background: #e8e8ed; border-radius: 8px; overflow-wrap: anywhere; }
+    .message.mine { background: #dcecff; }
+    .message strong { display: block; font-size: 12px; margin-bottom: 4px; }
+    .message-form { display: flex; gap: 8px; align-items: center; }
+    .message-form input { flex: 1; min-width: 0; padding: 12px; border: 1px solid #ccc; border-radius: 8px; font-size: 14px; }
+    .message-form button { margin: 0; }
     [hidden] { display: none !important; }
-
     @media (max-width: 480px) {
-      .container {
-        margin: 30px auto;
-        padding: 15px;
-      }
-
+      .container { margin: 30px auto; padding: 15px; }
       .card { padding: 20px; }
-
-      button {
-        width: 100%;
-        margin: 8px 0;
-      }
-
-      .message-form button {
-        width: auto;
-        margin: 0;
-      }
+      button { width: 100%; margin: 8px 0; }
+      .message-form button { width: auto; margin: 0; }
     }
   </style>
+  <!-- Generates the QR code in the browser; the pairing link is not sent to a QR service. -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"
+    integrity="sha512-CNgIRecGo7nphbeZ04Sc13ka07paqdeTu0WR1IM4kNcpmBAUSHSQX0FslNhTDadL4O5SAGapGt4FodqL8My0mA=="
+    crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 </head>
-
 <body>
   <main class="container">
     <h1>File Viewer</h1>
-
-    <p class="subtitle">
-      Send files from your phone to your computer.
-    </p>
-
+    <p class="subtitle">Send files from your phone to your computer.</p>
     <div class="card">
-
-      <!-- Device selection -->
       <div id="device-selection">
         <h2>Choose your device</h2>
-
-        <button id="computer-button">
-          I'm on my computer
-        </button>
-
-        <button id="phone-button">
-          I'm on my phone
-        </button>
+        <button id="computer-button">I'm on my computer</button>
+        <button id="phone-button">I'm on my phone</button>
       </div>
-
-      <!-- Computer interface -->
       <div id="computer-view" hidden>
-        <h2>Computer pairing</h2>
-
-        <p>Enter these details on your phone.</p>
-
+        <h2>Scan to connect</h2>
+        <p>Open your iPhone camera and scan this QR code.</p>
+        <div id="qr-code" aria-label="Private pairing QR code"></div>
         <div class="details">
-          <p><strong>Session ID</strong></p>
-          <code id="session-id"></code>
-
-          <p><strong>Pairing token</strong></p>
-          <code id="pairing-token" class="secret"></code>
-
-          <p><strong>Expires</strong></p>
-          <span id="session-expiry"></span>
+          <p>Expires: <strong id="session-expiry"></strong></p>
+          <p class="subtitle">Keep this QR code private. It acts as a temporary pairing key.</p>
         </div>
       </div>
-
-      <!-- Phone interface -->
       <div id="phone-view" hidden>
-        <h2>Connect to computer</h2>
-
-        <form id="pairing-form">
-          <input
-            id="phone-session-id"
-            type="text"
-            placeholder="Session ID"
-            autocomplete="off"
-            autocapitalize="off"
-            spellcheck="false"
-            required
-          >
-
-          <input
-            id="phone-token"
-            type="text"
-            placeholder="Pairing token"
-            autocomplete="off"
-            autocapitalize="off"
-            spellcheck="false"
-            required
-          >
-
-          <button id="join-button" type="submit">
-            Connect
-          </button>
-        </form>
+        <h2>Phone connection</h2>
+        <p id="phone-instructions">Scan the QR code shown on your computer using your iPhone camera.</p>
       </div>
-
-      <!-- Connection status -->
-      <p
-        id="status"
-        class="status"
-        role="status"
-        aria-live="polite"
-      >
-        Waiting for selection...
-      </p>
-
-      <!-- Temporary two-way messaging test -->
+      <p id="status" class="status" role="status" aria-live="polite">Waiting for selection...</p>
       <section id="messaging" hidden>
         <h2>Connection test</h2>
-        <p class="subtitle">
-          Send a message to your other device.
-        </p>
-
-        <div id="messages" class="messages"
-             aria-label="Messages"></div>
-
+        <p class="subtitle">Send a message to your other device.</p>
+        <div id="messages" class="messages" aria-label="Messages"></div>
         <form id="message-form" class="message-form">
-          <input
-            id="message-input"
-            type="text"
-            placeholder="Type a test message..."
-            maxlength="200"
-            required
-          >
-
-          <button id="send-button" type="submit">
-            Send
-          </button>
+          <input id="message-input" type="text" placeholder="Type a test message..." maxlength="200" required>
+          <button id="send-button" type="submit">Send</button>
         </form>
       </section>
-
-      <button id="back-button" hidden>
-        Back
-      </button>
+      <button id="back-button" hidden>Back</button>
     </div>
   </main>
-
   <script>
     const $ = id => document.getElementById(id);
-
     let currentSession = null;
     let phoneSession = null;
     let pairingSocket = null;
@@ -293,24 +96,11 @@
       const status = $("status");
       status.textContent = message;
       status.className = "status";
-
-      if (type === "success") {
-        status.classList.add("success");
-      }
-
-      if (type === "error") {
-        status.classList.add("error");
-      }
+      if (type === "success" || type === "error") status.classList.add(type);
     }
 
     function websocketURL(sessionId) {
-      const protocol =
-        location.protocol === "https:" ? "wss:" : "ws:";
-
-      return (
-        `${protocol}//${location.host}` +
-        `/api/sessions/${sessionId}/ws`
-      );
+      return `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/api/sessions/${sessionId}/ws`;
     }
 
     function disconnectComputerSocket() {
@@ -329,11 +119,8 @@
       }
     }
 
-    function activeSocket() {
-      return pairingSocket || phoneSocket;
-    }
+    function activeSocket() { return pairingSocket || phoneSocket; }
 
-    // Show the message test only with an open socket.
     function enableMessaging() {
       $("messaging").hidden = false;
       $("send-button").disabled = false;
@@ -346,372 +133,202 @@
       $("message-input").disabled = true;
     }
 
-    // Safely add a message without interpreting HTML.
     function addMessage(from, text, mine = false) {
       const item = document.createElement("div");
       item.className = mine ? "message mine" : "message";
-
       const heading = document.createElement("strong");
-      heading.textContent = mine
-        ? "You"
-        : from === "phone"
-          ? "iPhone"
-          : "Computer";
-
+      heading.textContent = mine ? "You" : from === "phone" ? "iPhone" : "Computer";
       const content = document.createElement("span");
       content.textContent = text;
-
       item.append(heading, content);
       $("messages").appendChild(item);
-
-      $("messages").scrollTop =
-        $("messages").scrollHeight;
+      $("messages").scrollTop = $("messages").scrollHeight;
     }
 
     function handleMessage(message) {
-      if (message.type === "test-message") {
-        if (
+      if (message.type === "test-message" &&
           typeof message.text === "string" &&
-          (message.from === "phone" ||
-           message.from === "computer")
-        ) {
-          addMessage(message.from, message.text);
-        }
+          (message.from === "phone" || message.from === "computer")) {
+        addMessage(message.from, message.text);
       }
     }
 
-    // Computer's authenticated WebSocket.
     function connectComputerSocket() {
       if (!currentSession) return;
-
       disconnectComputerSocket();
-
       const session = currentSession;
-
-      const socket = new WebSocket(
-        websocketURL(session.sessionId),
-        [
-          "file-viewer",
-          `token.${session.ownerToken}`
-        ]
-      );
-
+      const socket = new WebSocket(websocketURL(session.sessionId), [
+        "file-viewer", `token.${session.ownerToken}`
+      ]);
       pairingSocket = socket;
-
       setStatus("Connecting to pairing service...");
 
       socket.onopen = () => {
         if (pairingSocket !== socket) return;
-
-        setStatus(
-          "Ready! Open File Viewer on your phone."
-        );
+        setStatus("Ready! Scan the QR code with your iPhone.");
         enableMessaging();
       };
-
       socket.onmessage = event => {
         if (pairingSocket !== socket) return;
-
         try {
           const message = JSON.parse(event.data);
-
-          if (
-            message.type === "phone-joined" ||
-            (
-              message.type === "session-status" &&
-              message.joined
-            )
-          ) {
-            setStatus(
-              "Phone paired successfully!",
-              "success"
-            );
+          if (message.type === "phone-joined" ||
+              (message.type === "session-status" && message.joined)) {
+            setStatus("Phone paired successfully!", "success");
           }
-
           handleMessage(message);
-        } catch (error) {
-          console.error(
-            "Invalid computer WebSocket message:",
-            error
-          );
-        }
+        } catch (error) { console.error("Invalid computer WebSocket message:", error); }
       };
-
       socket.onerror = error => {
-        if (pairingSocket !== socket) return;
-        console.error("Computer WebSocket error:", error);
+        if (pairingSocket === socket) console.error("Computer WebSocket error:", error);
       };
-
       socket.onclose = () => {
         if (pairingSocket !== socket) return;
-
         pairingSocket = null;
         disableMessaging();
-
-        setStatus(
-          "Computer connection closed. Create a new session.",
-          "error"
-        );
+        setStatus("Computer connection closed. Create a new session.", "error");
       };
     }
 
-    // Phone's authenticated WebSocket.
     function connectPhoneSocket() {
       if (!phoneSession) return;
-
       disconnectPhoneSocket();
-
       const session = phoneSession;
-
-      const socket = new WebSocket(
-        websocketURL(session.sessionId),
-        [
-          "file-viewer",
-          `token.${session.phoneToken}`
-        ]
-      );
-
+      const socket = new WebSocket(websocketURL(session.sessionId), [
+        "file-viewer", `token.${session.phoneToken}`
+      ]);
       phoneSocket = socket;
-
-      setStatus(
-        "Pairing accepted. Establishing connection..."
-      );
-
+      setStatus("Pairing accepted. Establishing connection...");
       socket.onopen = () => {
         if (phoneSocket !== socket) return;
-
-        setStatus(
-          "Connected to pairing service!",
-          "success"
-        );
+        setStatus("Connected to pairing service!", "success");
         enableMessaging();
       };
-
       socket.onmessage = event => {
         if (phoneSocket !== socket) return;
-
         try {
           const message = JSON.parse(event.data);
-
-          if (
-            message.type === "session-status" &&
-            message.role === "phone"
-          ) {
-            setStatus(
-              "Phone WebSocket authenticated successfully!",
-              "success"
-            );
+          if (message.type === "session-status" && message.role === "phone") {
+            setStatus("Phone WebSocket authenticated successfully!", "success");
           }
-
           handleMessage(message);
-        } catch (error) {
-          console.error(
-            "Invalid phone WebSocket message:",
-            error
-          );
-        }
+        } catch (error) { console.error("Invalid phone WebSocket message:", error); }
       };
-
       socket.onerror = error => {
-        if (phoneSocket !== socket) return;
-        console.error("Phone WebSocket error:", error);
+        if (phoneSocket === socket) console.error("Phone WebSocket error:", error);
       };
-
       socket.onclose = () => {
         if (phoneSocket !== socket) return;
-
         phoneSocket = null;
         disableMessaging();
-
-        setStatus(
-          "Phone connection closed. Create a new session.",
-          "error"
-        );
+        setStatus("Phone connection closed. Create a new pairing session.", "error");
       };
     }
 
-    // Create a session on the computer.
-    $("computer-button").addEventListener(
-      "click",
-      async () => {
-        const generation = viewGeneration;
-        const button = $("computer-button");
+    // The token is in a URL fragment, which is not sent in the HTTP request.
+    // Remove it from the address bar before making network requests.
+    function consumePairingLink() {
+      const fragment = location.hash;
+      if (!fragment.startsWith("#pair=")) return null;
+      history.replaceState(null, "", location.pathname + location.search);
+      const match = /^#pair=([0-9a-f-]{36})\.([0-9a-f]{64})$/.exec(fragment);
+      return match ? { sessionId: match[1], pairingToken: match[2] } : "invalid";
+    }
 
-        button.disabled = true;
-        setStatus("Creating pairing session...");
-
-        try {
-          const response = await fetch("/api/sessions", {
-            method: "POST",
-            cache: "no-store"
-          });
-
-          if (!response.ok) {
-            throw new Error("Could not create session");
-          }
-
-          const session = await response.json();
-
-          if (generation !== viewGeneration) return;
-
-          currentSession = session;
-
-          $("session-id").textContent =
-            session.sessionId;
-
-          $("pairing-token").textContent =
-            session.pairingToken;
-
-          $("session-expiry").textContent =
-            new Date(
-              session.expiresAt
-            ).toLocaleTimeString();
-
-          showView("computer");
-          connectComputerSocket();
-
-        } catch (error) {
-          if (generation !== viewGeneration) return;
-
-          console.error(error);
-          setStatus(
-            "Session creation failed. Please try again.",
-            "error"
-          );
-        } finally {
-          button.disabled = false;
-        }
-      }
-    );
-
-    // Select phone mode.
-    $("phone-button").addEventListener("click", () => {
+    async function joinFromQR(pairing) {
+      const generation = viewGeneration;
       showView("phone");
-      setStatus(
-        "Enter the pairing details from your computer."
-      );
+      $("phone-instructions").textContent = "Connecting to your computer...";
+      setStatus("Pairing with computer...");
+      try {
+        const response = await fetch(
+          `/api/sessions/${encodeURIComponent(pairing.sessionId)}/join`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ pairingToken: pairing.pairingToken }),
+            cache: "no-store"
+          }
+        );
+        if (!response.ok) throw new Error("Pairing request rejected");
+        const result = await response.json();
+        if (generation !== viewGeneration) return;
+        if (!result.success || typeof result.phoneToken !== "string" ||
+            !/^[0-9a-f]{64}$/.test(result.phoneToken)) {
+          throw new Error("Invalid pairing response");
+        }
+        phoneSession = { sessionId: pairing.sessionId, phoneToken: result.phoneToken };
+        $("phone-instructions").textContent = "Your phone is paired with your computer.";
+        connectPhoneSocket();
+      } catch (error) {
+        if (generation !== viewGeneration) return;
+        console.error("QR pairing failed:", error);
+        $("phone-instructions").textContent = "Scan a fresh QR code from your computer to retry.";
+        setStatus("Could not pair. The QR code may have expired or already been used.", "error");
+      }
+    }
+
+    $("computer-button").addEventListener("click", async () => {
+      const generation = viewGeneration;
+      const button = $("computer-button");
+      button.disabled = true;
+      setStatus("Creating pairing session...");
+      try {
+        const response = await fetch("/api/sessions", { method: "POST", cache: "no-store" });
+        if (!response.ok) throw new Error("Could not create session");
+        const session = await response.json();
+        if (generation !== viewGeneration) return;
+        if (typeof QRCode === "undefined") throw new Error("QR code library unavailable");
+        currentSession = session;
+        const link = `${location.origin}${location.pathname}#pair=${session.sessionId}.${session.pairingToken}`;
+        $("qr-code").replaceChildren();
+        new QRCode($("qr-code"), {
+          text: link,
+          width: 256,
+          height: 256,
+          colorDark: "#000000",
+          colorLight: "#ffffff",
+          correctLevel: QRCode.CorrectLevel.M
+        });
+        $("session-expiry").textContent = new Date(session.expiresAt).toLocaleTimeString();
+        showView("computer");
+        connectComputerSocket();
+      } catch (error) {
+        if (generation !== viewGeneration) return;
+        console.error("Session creation failed:", error);
+        setStatus("Could not create a QR code. Please try again.", "error");
+      } finally {
+        button.disabled = false;
+      }
     });
 
-    // Join a session on the phone.
-    $("pairing-form").addEventListener(
-      "submit",
-      async event => {
-        event.preventDefault();
+    $("phone-button").addEventListener("click", () => {
+      showView("phone");
+      setStatus("Scan the QR code on your computer with your iPhone camera.");
+    });
 
-        const generation = viewGeneration;
+    $("message-form").addEventListener("submit", event => {
+      event.preventDefault();
+      const socket = activeSocket();
+      const input = $("message-input");
+      const text = input.value.trim();
+      if (!socket || socket.readyState !== WebSocket.OPEN || !text || text.length > 200) return;
+      socket.send(JSON.stringify({ type: "test-message", text }));
+      addMessage("self", text, true);
+      input.value = "";
+    });
 
-        const sessionId =
-          $("phone-session-id").value.trim().toLowerCase();
-
-        const pairingToken =
-          $("phone-token").value.trim().toLowerCase();
-
-        const button = $("join-button");
-        button.disabled = true;
-
-        setStatus("Pairing with computer...");
-
-        try {
-          const response = await fetch(
-            `/api/sessions/${encodeURIComponent(sessionId)}/join`,
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json"
-              },
-              body: JSON.stringify({ pairingToken }),
-              cache: "no-store"
-            }
-          );
-
-          if (!response.ok) {
-            throw new Error("Pairing failed");
-          }
-
-          const result = await response.json();
-
-          if (generation !== viewGeneration) return;
-
-          if (
-            !result.success ||
-            typeof result.phoneToken !== "string" ||
-            !/^[0-9a-f]{64}$/.test(result.phoneToken)
-          ) {
-            throw new Error("Invalid pairing response");
-          }
-
-          phoneSession = {
-            sessionId,
-            phoneToken: result.phoneToken
-          };
-
-          $("pairing-form").hidden = true;
-          $("pairing-form").reset();
-
-          connectPhoneSocket();
-
-        } catch (error) {
-          if (generation !== viewGeneration) return;
-
-          console.error(error);
-          setStatus(
-            "Could not connect. Check pairing details.",
-            "error"
-          );
-          button.disabled = false;
-        }
-      }
-    );
-
-    // Send a message through the authenticated WebSocket.
-    $("message-form").addEventListener(
-      "submit",
-      event => {
-        event.preventDefault();
-
-        const socket = activeSocket();
-        const input = $("message-input");
-        const text = input.value.trim();
-
-        if (
-          !socket ||
-          socket.readyState !== WebSocket.OPEN ||
-          !text ||
-          text.length > 200
-        ) {
-          return;
-        }
-
-        socket.send(JSON.stringify({
-          type: "test-message",
-          text
-        }));
-
-        addMessage("self", text, true);
-        input.value = "";
-      }
-    );
-
-    // Return to device selection.
     $("back-button").addEventListener("click", () => {
       viewGeneration++;
-
       disconnectComputerSocket();
       disconnectPhoneSocket();
-
       currentSession = null;
       phoneSession = null;
-
-      $("session-id").textContent = "";
-      $("pairing-token").textContent = "";
+      $("qr-code").replaceChildren();
       $("session-expiry").textContent = "";
       $("messages").replaceChildren();
-
-      $("pairing-form").reset();
-      $("pairing-form").hidden = false;
-      $("join-button").disabled = false;
       $("message-input").value = "";
-
+      $("phone-instructions").textContent = "Scan the QR code shown on your computer using your iPhone camera.";
       disableMessaging();
       setStatus("Waiting for selection...");
       showView("selection");
@@ -723,6 +340,13 @@
     });
 
     disableMessaging();
+    const pairing = consumePairingLink();
+    if (pairing === "invalid") {
+      showView("phone");
+      setStatus("Invalid QR code. Scan a new one from your computer.", "error");
+    } else if (pairing) {
+      joinFromQR(pairing);
+    }
   </script>
 </body>
 </html>
