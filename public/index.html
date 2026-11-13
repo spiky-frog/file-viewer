@@ -172,6 +172,65 @@
     const $ = id => document.getElementById(id);
 
     let currentSession = null;
+    
+    let statusInterval = null;
+
+    async function checkPairingStatus() {
+      if (!currentSession) return;
+
+      try {
+        const response = await fetch(
+          `/api/sessions/${currentSession.sessionId}/status`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              pairingToken: currentSession.pairingToken
+            }),
+            cache: "no-store"
+          }
+        );
+
+        if (!response.ok) {
+          stopStatusPolling();
+          $("status").textContent =
+            "Session expired or unavailable.";
+          return;
+        }
+
+        const result = await response.json();
+
+        if (result.joined) {
+          stopStatusPolling();
+          $("status").textContent =
+            "✅ Phone connected successfully!";
+        }
+
+      } catch (error) {
+        console.error("Status check failed:", error);
+      }
+    }
+
+    function startStatusPolling() {
+      stopStatusPolling();
+
+      checkPairingStatus();
+
+      statusInterval = setInterval(
+        checkPairingStatus,
+        3000
+      );
+    }
+
+    function stopStatusPolling() {
+      if (statusInterval !== null) {
+        clearInterval(statusInterval);
+        statusInterval = null;
+      }
+    }
+
 
     function showView(view) {
       $("device-selection").hidden = view !== "selection";
@@ -208,6 +267,8 @@
         showView("computer");
         $("status").textContent =
           "Session ready. Open File Viewer on your phone.";
+
+        startStatusPolling();
 
       } catch (error) {
         $("status").textContent =
@@ -270,6 +331,7 @@
     });
 
     $("back-button").addEventListener("click", () => {
+      stopStatusPolling();
       currentSession = null;
       $("pairing-form").reset();
       $("pairing-form").hidden = false;
