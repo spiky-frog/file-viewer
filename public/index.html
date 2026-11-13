@@ -269,7 +269,7 @@
 
       const socket = new WebSocket(url, [
         "file-viewer",
-        `token.${session.pairingToken}`
+        `token.${session.ownerToken}`
       ]);
 
       pairingSocket = socket;
