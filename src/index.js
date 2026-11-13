@@ -64,15 +64,26 @@ export default {
 
       try {
         const sessionId = crypto.randomUUID();
+
+        // Separate credentials for each device
+        const ownerToken = randomToken();
         const pairingToken = randomToken();
+        
+        const ownerHash = await hashToken(ownerToken);
         const tokenHash = await hashToken(pairingToken);
+        
         const expiresAt = Date.now() + SESSION_DURATION;
-
+        
         const room = env.PAIRING_ROOM.getByName(sessionId);
-        await room.createSession(tokenHash, expiresAt);
-
+        
+        await room.createSession(
+          tokenHash,
+          expiresAt,
+          ownerHash
+        );
+        
         return Response.json(
-          { sessionId, pairingToken, expiresAt },
+          { sessionId, ownerToken, pairingToken, expiresAt },
           {
             status: 201,
             headers: { "Cache-Control": "no-store" }
@@ -305,13 +316,14 @@ export class PairingRoom extends DurableObject {
     };
   }
 
-  async createSession(tokenHash, expiresAt) {
+  async createSession(tokenHash, expiresAt, ownerHash) {
     await this.ctx.storage.put("session", {
       tokenHash,
+      ownerHash,
       expiresAt,
       joined: false,
       failedAttempts: 0
-    });
+  });
 
     await this.ctx.storage.setAlarm(expiresAt);
     return { created: true };
