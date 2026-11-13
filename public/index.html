@@ -18,8 +18,8 @@
 
     .container {
       max-width: 650px;
-      margin: 70px auto;
-      padding: 24px;
+      margin: 60px auto;
+      padding: 20px;
       text-align: center;
     }
 
@@ -51,25 +51,43 @@
       cursor: not-allowed;
     }
 
-    #status {
-      margin-top: 20px;
-      color: #666;
+    input {
+      display: block;
+      width: 100%;
+      padding: 12px;
+      margin: 12px 0;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      font-size: 14px;
     }
 
     .details {
-      margin-top: 20px;
       padding: 16px;
+      margin-top: 20px;
       background: #f5f5f7;
       border-radius: 10px;
-      overflow-wrap: anywhere;
       text-align: left;
+      overflow-wrap: anywhere;
     }
 
-    .details p { margin: 8px 0; }
+    code {
+      font-size: 12px;
+      word-break: break-all;
+    }
 
-    .details code { font-size: 12px; }
+    .secret {
+      user-select: all;
+    }
 
-    [hidden] { display: none !important; }
+    .status {
+      margin-top: 20px;
+      color: #555;
+      overflow-wrap: anywhere;
+    }
+
+    [hidden] {
+      display: none !important;
+    }
   </style>
 </head>
 
@@ -81,9 +99,9 @@
     </p>
 
     <div class="card">
-      <h2>Choose your device</h2>
-
       <div id="device-selection">
+        <h2>Choose your device</h2>
+
         <button id="computer-button">
           I'm on my computer
         </button>
@@ -93,87 +111,170 @@
         </button>
       </div>
 
-      <p id="status">Waiting for selection...</p>
+      <div id="computer-view" hidden>
+        <h2>Computer pairing</h2>
 
-      <div id="session-details" class="details" hidden>
-        <h3>Pairing session created</h3>
+        <p>Enter these details on your phone.</p>
 
-        <p>
-          <strong>Session ID:</strong>
+        <div class="details">
+          <p><strong>Session ID</strong></p>
           <code id="session-id"></code>
-        </p>
 
-        <p>
-          <strong>Expires:</strong>
+          <p><strong>Pairing token</strong></p>
+          <code id="pairing-token" class="secret"></code>
+
+          <p><strong>Expires</strong></p>
           <span id="session-expiry"></span>
-        </p>
-
-        <p>
-          Your session is ready. Phone pairing will be
-          added in the next steps.
-        </p>
+        </div>
       </div>
+
+      <div id="phone-view" hidden>
+        <h2>Connect to computer</h2>
+
+        <form id="pairing-form">
+          <input
+            id="phone-session-id"
+            type="text"
+            placeholder="Session ID"
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck="false"
+            required
+          >
+
+          <input
+            id="phone-token"
+            type="text"
+            placeholder="Pairing token"
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck="false"
+            required
+          >
+
+          <button id="join-button" type="submit">
+            Connect
+          </button>
+        </form>
+      </div>
+
+      <p id="status" class="status">
+        Waiting for selection...
+      </p>
+
+      <button id="back-button" hidden>
+        Back
+      </button>
     </div>
   </main>
 
   <script>
-    const computerButton =
-      document.getElementById("computer-button");
+    const $ = id => document.getElementById(id);
 
-    const phoneButton =
-      document.getElementById("phone-button");
+    let currentSession = null;
 
-    const statusElement =
-      document.getElementById("status");
+    function showView(view) {
+      $("device-selection").hidden = view !== "selection";
+      $("computer-view").hidden = view !== "computer";
+      $("phone-view").hidden = view !== "phone";
+      $("back-button").hidden = view === "selection";
+    }
 
-    const sessionDetails =
-      document.getElementById("session-details");
-
-    computerButton.addEventListener("click", async () => {
-      computerButton.disabled = true;
-      sessionDetails.hidden = true;
-      statusElement.textContent = "Creating pairing session...";
+    $("computer-button").addEventListener("click", async () => {
+      $("computer-button").disabled = true;
+      $("status").textContent = "Creating session...";
 
       try {
         const response = await fetch("/api/sessions", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
           cache: "no-store"
         });
 
         if (!response.ok) {
-          throw new Error("Session creation failed");
+          throw new Error("Could not create session");
         }
 
-        const session = await response.json();
+        currentSession = await response.json();
 
-        document.getElementById("session-id").textContent =
-          session.sessionId;
+        $("session-id").textContent =
+          currentSession.sessionId;
 
-        document.getElementById("session-expiry").textContent =
-          new Date(session.expiresAt).toLocaleTimeString();
+        $("pairing-token").textContent =
+          currentSession.pairingToken;
 
-        statusElement.textContent = "Session created successfully!";
-        sessionDetails.hidden = false;
+        $("session-expiry").textContent =
+          new Date(currentSession.expiresAt).toLocaleTimeString();
 
-        // Keep the pairing token in memory for later use.
-        // Never put it in the URL or localStorage.
-        window.currentSession = session;
+        showView("computer");
+        $("status").textContent =
+          "Session ready. Open File Viewer on your phone.";
 
       } catch (error) {
-        statusElement.textContent =
-          "Could not create a pairing session. Please try again.";
-
+        $("status").textContent =
+          "Session creation failed. Please try again.";
         console.error(error);
-        computerButton.disabled = false;
+      } finally {
+        $("computer-button").disabled = false;
       }
     });
 
-    phoneButton.addEventListener("click", () => {
-      statusElement.textContent =
-        "Phone pairing will be available soon.";
+    $("phone-button").addEventListener("click", () => {
+      showView("phone");
+      $("status").textContent =
+        "Enter the pairing details from your computer.";
+    });
+
+    $("pairing-form").addEventListener("submit", async event => {
+      event.preventDefault();
+
+      const sessionId =
+        $("phone-session-id").value.trim().toLowerCase();
+
+      const pairingToken =
+        $("phone-token").value.trim().toLowerCase();
+
+      const button = $("join-button");
+      button.disabled = true;
+
+      $("status").textContent = "Connecting...";
+
+      try {
+        const response = await fetch(
+          `/api/sessions/${encodeURIComponent(sessionId)}/join`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ pairingToken }),
+            cache: "no-store"
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error("Pairing failed");
+        }
+
+        $("status").textContent =
+          "Success! Your phone has joined the pairing session.";
+
+        $("pairing-form").hidden = true;
+
+        // Temporary test: this is not yet a WebRTC connection.
+      } catch (error) {
+        $("status").textContent =
+          "Could not pair. Check the details and try again.";
+        button.disabled = false;
+        console.error(error);
+      }
+    });
+
+    $("back-button").addEventListener("click", () => {
+      currentSession = null;
+      $("pairing-form").reset();
+      $("pairing-form").hidden = false;
+      $("status").textContent = "Waiting for selection...";
+      showView("selection");
     });
   </script>
 </body>
