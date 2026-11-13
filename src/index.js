@@ -272,7 +272,7 @@ export class PairingRoom extends DurableObject {
     if (
       !session ||
       Date.now() >= session.expiresAt ||
-      session.tokenHash !== tokenHash
+      session.ownerHash !== tokenHash
     ) {
       return new Response("Session unavailable", {
         status: 403
@@ -384,7 +384,7 @@ export class PairingRoom extends DurableObject {
       return null;
     }
 
-    if (session.tokenHash !== tokenHash) {
+    if (session.ownerHash !== tokenHash) {
       return null;
     }
 
