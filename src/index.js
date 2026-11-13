@@ -383,6 +383,16 @@ export class PairingRoom extends DurableObject {
   }
 
   async alarm() {
+    // Close all WebSocket connections in this room.
+    for (const ws of this.ctx.getWebSockets()) {
+      try {
+        ws.close(1000, "Pairing session expired");
+      } catch (error) {
+        console.error("Could not close WebSocket:", error);
+      }
+    }
+
+    // Delete the expired pairing session.
     await this.ctx.storage.deleteAll();
   }
 }
