@@ -7,7 +7,9 @@
   <title>File Viewer</title>
 
   <style>
-    * { box-sizing: border-box; }
+    * {
+      box-sizing: border-box;
+    }
 
     body {
       margin: 0;
@@ -23,16 +25,20 @@
       text-align: center;
     }
 
-    h1 { font-size: 32px; }
+    h1 {
+      font-size: 32px;
+    }
 
-    .subtitle { color: #666; }
+    .subtitle {
+      color: #666;
+    }
 
     .card {
       background: white;
       border-radius: 16px;
       padding: 30px;
       margin-top: 30px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
     }
 
     button {
@@ -44,6 +50,10 @@
       font-size: 16px;
       cursor: pointer;
       margin: 8px;
+    }
+
+    button:hover {
+      background: #0066d6;
     }
 
     button:disabled {
@@ -70,6 +80,10 @@
       overflow-wrap: anywhere;
     }
 
+    .details p {
+      margin: 12px 0 6px;
+    }
+
     code {
       font-size: 12px;
       word-break: break-all;
@@ -85,8 +99,33 @@
       overflow-wrap: anywhere;
     }
 
+    .success {
+      color: #16803c;
+      font-weight: 600;
+    }
+
+    .error {
+      color: #c62828;
+    }
+
     [hidden] {
       display: none !important;
+    }
+
+    @media (max-width: 480px) {
+      .container {
+        margin: 30px auto;
+        padding: 15px;
+      }
+
+      .card {
+        padding: 20px;
+      }
+
+      button {
+        width: 100%;
+        margin: 8px 0;
+      }
     }
   </style>
 </head>
@@ -94,11 +133,14 @@
 <body>
   <main class="container">
     <h1>File Viewer</h1>
+
     <p class="subtitle">
       Send files from your phone to your computer.
     </p>
 
     <div class="card">
+
+      <!-- Device selection -->
       <div id="device-selection">
         <h2>Choose your device</h2>
 
@@ -111,6 +153,7 @@
         </button>
       </div>
 
+      <!-- Computer interface -->
       <div id="computer-view" hidden>
         <h2>Computer pairing</h2>
 
@@ -128,6 +171,7 @@
         </div>
       </div>
 
+      <!-- Phone interface -->
       <div id="phone-view" hidden>
         <h2>Connect to computer</h2>
 
@@ -158,13 +202,15 @@
         </form>
       </div>
 
-      <p id="status" class="status">
+      <!-- Status -->
+      <p id="status" class="status" role="status" aria-live="polite">
         Waiting for selection...
       </p>
 
       <button id="back-button" hidden>
         Back
       </button>
+
     </div>
   </main>
 
@@ -172,66 +218,9 @@
     const $ = id => document.getElementById(id);
 
     let currentSession = null;
-    
-    let statusInterval = null;
+    let pairingSocket = null;
 
-    async function checkPairingStatus() {
-      if (!currentSession) return;
-
-      try {
-        const response = await fetch(
-          `/api/sessions/${currentSession.sessionId}/status`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-              pairingToken: currentSession.pairingToken
-            }),
-            cache: "no-store"
-          }
-        );
-
-        if (!response.ok) {
-          stopStatusPolling();
-          $("status").textContent =
-            "Session expired or unavailable.";
-          return;
-        }
-
-        const result = await response.json();
-
-        if (result.joined) {
-          stopStatusPolling();
-          $("status").textContent =
-            "✅ Phone connected successfully!";
-        }
-
-      } catch (error) {
-        console.error("Status check failed:", error);
-      }
-    }
-
-    function startStatusPolling() {
-      stopStatusPolling();
-
-      checkPairingStatus();
-
-      statusInterval = setInterval(
-        checkPairingStatus,
-        3000
-      );
-    }
-
-    function stopStatusPolling() {
-      if (statusInterval !== null) {
-        clearInterval(statusInterval);
-        statusInterval = null;
-      }
-    }
-
-
+    // Switch between device interfaces
     function showView(view) {
       $("device-selection").hidden = view !== "selection";
       $("computer-view").hidden = view !== "computer";
@@ -239,104 +228,241 @@
       $("back-button").hidden = view === "selection";
     }
 
-    $("computer-button").addEventListener("click", async () => {
-      $("computer-button").disabled = true;
-      $("status").textContent = "Creating session...";
+    function setStatus(message, type = "") {
+      const status = $("status");
 
-      try {
-        const response = await fetch("/api/sessions", {
-          method: "POST",
-          cache: "no-store"
-        });
+      status.textContent = message;
+      status.className = "status";
 
-        if (!response.ok) {
-          throw new Error("Could not create session");
-        }
-
-        currentSession = await response.json();
-
-        $("session-id").textContent =
-          currentSession.sessionId;
-
-        $("pairing-token").textContent =
-          currentSession.pairingToken;
-
-        $("session-expiry").textContent =
-          new Date(currentSession.expiresAt).toLocaleTimeString();
-
-        showView("computer");
-        $("status").textContent =
-          "Session ready. Open File Viewer on your phone.";
-
-        startStatusPolling();
-
-      } catch (error) {
-        $("status").textContent =
-          "Session creation failed. Please try again.";
-        console.error(error);
-      } finally {
-        $("computer-button").disabled = false;
+      if (type === "success") {
+        status.classList.add("success");
       }
-    });
 
+      if (type === "error") {
+        status.classList.add("error");
+      }
+    }
+
+    // Close the existing WebSocket connection
+    function disconnectWebSocket() {
+      if (pairingSocket) {
+        const socket = pairingSocket;
+        pairingSocket = null;
+        socket.close();
+      }
+    }
+
+    // Connect computer to its Durable Object room
+    function connectWebSocket() {
+      if (!currentSession) return;
+
+      disconnectWebSocket();
+
+      const session = currentSession;
+
+      const protocol =
+        location.protocol === "https:" ? "wss:" : "ws:";
+
+      const url =
+        `${protocol}//${location.host}` +
+        `/api/sessions/${session.sessionId}/ws`;
+
+      const socket = new WebSocket(url, [
+        "file-viewer",
+        `token.${session.pairingToken}`
+      ]);
+
+      pairingSocket = socket;
+
+      setStatus("Connecting to pairing service...");
+
+      socket.onopen = () => {
+        if (pairingSocket !== socket) return;
+
+        setStatus(
+          "Ready! Open File Viewer on your phone."
+        );
+      };
+
+      socket.onmessage = event => {
+        if (pairingSocket !== socket) return;
+
+        try {
+          const message = JSON.parse(event.data);
+
+          if (
+            message.type === "phone-joined" ||
+            (
+              message.type === "session-status" &&
+              message.joined
+            )
+          ) {
+            setStatus(
+              "Phone connected successfully!",
+              "success"
+            );
+          }
+
+        } catch (error) {
+          console.error(
+            "Invalid WebSocket message:",
+            error
+          );
+        }
+      };
+
+      socket.onerror = error => {
+        if (pairingSocket !== socket) return;
+
+        console.error("WebSocket error:", error);
+      };
+
+      socket.onclose = () => {
+        if (pairingSocket !== socket) return;
+
+        pairingSocket = null;
+
+        setStatus(
+          "Pairing connection closed. Create a new session.",
+          "error"
+        );
+      };
+    }
+
+    // Computer creates a new pairing session
+    $("computer-button").addEventListener(
+      "click",
+      async () => {
+        const button = $("computer-button");
+
+        button.disabled = true;
+        setStatus("Creating pairing session...");
+
+        try {
+          const response = await fetch("/api/sessions", {
+            method: "POST",
+            cache: "no-store"
+          });
+
+          if (!response.ok) {
+            throw new Error("Could not create session");
+          }
+
+          currentSession = await response.json();
+
+          $("session-id").textContent =
+            currentSession.sessionId;
+
+          $("pairing-token").textContent =
+            currentSession.pairingToken;
+
+          $("session-expiry").textContent =
+            new Date(
+              currentSession.expiresAt
+            ).toLocaleTimeString();
+
+          showView("computer");
+
+          // Establish real-time WebSocket connection
+          connectWebSocket();
+
+        } catch (error) {
+          console.error(error);
+
+          setStatus(
+            "Session creation failed. Please try again.",
+            "error"
+          );
+        } finally {
+          button.disabled = false;
+        }
+      }
+    );
+
+    // Show the phone pairing form
     $("phone-button").addEventListener("click", () => {
       showView("phone");
-      $("status").textContent =
-        "Enter the pairing details from your computer.";
+
+      setStatus(
+        "Enter the pairing details from your computer."
+      );
     });
 
-    $("pairing-form").addEventListener("submit", async event => {
-      event.preventDefault();
+    // Phone joins the pairing session
+    $("pairing-form").addEventListener(
+      "submit",
+      async event => {
+        event.preventDefault();
 
-      const sessionId =
-        $("phone-session-id").value.trim().toLowerCase();
+        const sessionId =
+          $("phone-session-id")
+            .value.trim().toLowerCase();
 
-      const pairingToken =
-        $("phone-token").value.trim().toLowerCase();
+        const pairingToken =
+          $("phone-token")
+            .value.trim().toLowerCase();
 
-      const button = $("join-button");
-      button.disabled = true;
+        const button = $("join-button");
+        button.disabled = true;
 
-      $("status").textContent = "Connecting...";
+        setStatus("Connecting to computer...");
 
-      try {
-        const response = await fetch(
-          `/api/sessions/${encodeURIComponent(sessionId)}/join`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify({ pairingToken }),
-            cache: "no-store"
+        try {
+          const response = await fetch(
+            `/api/sessions/${encodeURIComponent(sessionId)}/join`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({
+                pairingToken
+              }),
+              cache: "no-store"
+            }
+          );
+
+          if (!response.ok) {
+            throw new Error("Pairing failed");
           }
-        );
 
-        if (!response.ok) {
-          throw new Error("Pairing failed");
+          setStatus(
+            "Success! Your phone has joined the pairing session.",
+            "success"
+          );
+
+          $("pairing-form").hidden = true;
+
+        } catch (error) {
+          console.error(error);
+
+          setStatus(
+            "Could not pair. Check the details and try again.",
+            "error"
+          );
+
+          button.disabled = false;
         }
-
-        $("status").textContent =
-          "Success! Your phone has joined the pairing session.";
-
-        $("pairing-form").hidden = true;
-
-        // Temporary test: this is not yet a WebRTC connection.
-      } catch (error) {
-        $("status").textContent =
-          "Could not pair. Check the details and try again.";
-        button.disabled = false;
-        console.error(error);
       }
-    });
+    );
 
+    // Return to device selection
     $("back-button").addEventListener("click", () => {
-      stopStatusPolling();
+      disconnectWebSocket();
+
       currentSession = null;
+
       $("pairing-form").reset();
       $("pairing-form").hidden = false;
-      $("status").textContent = "Waiting for selection...";
+      $("join-button").disabled = false;
+
+      setStatus("Waiting for selection...");
       showView("selection");
+    });
+
+    // Close WebSocket when leaving the page
+    window.addEventListener("pagehide", () => {
+      disconnectWebSocket();
     });
   </script>
 </body>
