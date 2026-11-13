@@ -68,20 +68,20 @@ export default {
         // Separate credentials for each device
         const ownerToken = randomToken();
         const pairingToken = randomToken();
-        
+
         const ownerHash = await hashToken(ownerToken);
         const tokenHash = await hashToken(pairingToken);
-        
+
         const expiresAt = Date.now() + SESSION_DURATION;
-        
+
         const room = env.PAIRING_ROOM.getByName(sessionId);
-        
+
         await room.createSession(
           tokenHash,
           expiresAt,
           ownerHash
         );
-        
+
         return Response.json(
           { sessionId, ownerToken, pairingToken, expiresAt },
           {
@@ -97,8 +97,8 @@ export default {
         );
       }
     }
-    
-    // Connect computer to its pairing room via WebSocket
+
+    // Connect to pairing room via WebSocket
     const wsMatch = url.pathname.match(
       /^\/api\/sessions\/([0-9a-f-]{36})\/ws$/
     );
@@ -255,13 +255,15 @@ export default {
 };
 
 export class PairingRoom extends DurableObject {
-  
+
+  // Authenticate computer and phone WebSocket connections
   async fetch(request) {
     const protocols = (
       request.headers.get("Sec-WebSocket-Protocol") || ""
     ).split(",").map(value => value.trim());
 
     if (
+      request.method !== "GET" ||
       request.headers.get("Upgrade")?.toLowerCase()
         !== "websocket" ||
       protocols.length !== 2 ||
@@ -277,30 +279,48 @@ export class PairingRoom extends DurableObject {
 
     const session = await this.ctx.storage.get("session");
 
-    if (
-      !session ||
-      Date.now() >= session.expiresAt ||
-      session.ownerHash !== tokenHash
-    ) {
+    if (!session || Date.now() >= session.expiresAt) {
       return new Response("Session unavailable", {
         status: 403
       });
     }
 
-    // Allow only one computer WebSocket per session.
-    if (this.ctx.getWebSockets("computer").length > 0) {
-      return new Response("Computer already connected", {
-        status: 409
-      });
+    // Identify which device is connecting
+    let role;
+
+    if (session.ownerHash === tokenHash) {
+      role = "computer";
+    } else if (
+      session.joined &&
+      session.phoneHash &&
+      session.phoneHash === tokenHash
+    ) {
+      role = "phone";
+    } else {
+      return new Response("Unauthorized", { status: 401 });
+    }
+
+    // Allow only one active connection per device
+    const activeConnections = this.ctx
+      .getWebSockets(role)
+      .filter(ws => ws.readyState === WebSocket.OPEN);
+
+    if (activeConnections.length > 0) {
+      return new Response(
+        "Device already connected",
+        { status: 409 }
+      );
     }
 
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
 
-    this.ctx.acceptWebSocket(server, ["computer"]);
+    // Tag connection with its authenticated device role
+    this.ctx.acceptWebSocket(server, [role]);
 
     server.send(JSON.stringify({
       type: "session-status",
+      role,
       joined: session.joined
     }));
 
@@ -331,7 +351,7 @@ export class PairingRoom extends DurableObject {
       expiresAt,
       joined: false,
       failedAttempts: 0
-  });
+    });
 
     await this.ctx.storage.setAlarm(expiresAt);
     return { created: true };
@@ -365,14 +385,14 @@ export class PairingRoom extends DurableObject {
     // Generate a dedicated WebSocket credential for the phone
     const phoneToken = randomToken();
     const phoneHash = await hashToken(phoneToken);
-    
+
     // Mark the session as paired
     session.joined = true;
     session.phoneHash = phoneHash;
-    
+
     await this.ctx.storage.put("session", session);
 
-    // Notify the connected computer immediately.
+    // Notify the connected computer immediately
     for (const ws of this.ctx.getWebSockets("computer")) {
       try {
         ws.send(JSON.stringify({
@@ -384,7 +404,6 @@ export class PairingRoom extends DurableObject {
     }
 
     return { success: true, phoneToken };
-
   }
 
   async getSessionStatus(tokenHash) {
@@ -409,7 +428,7 @@ export class PairingRoom extends DurableObject {
   }
 
   async alarm() {
-    // Close all WebSocket connections in this room.
+    // Close all WebSocket connections in this room
     for (const ws of this.ctx.getWebSockets()) {
       try {
         ws.close(1000, "Pairing session expired");
@@ -418,7 +437,7 @@ export class PairingRoom extends DurableObject {
       }
     }
 
-    // Delete the expired pairing session.
+    // Delete the expired pairing session
     await this.ctx.storage.deleteAll();
   }
 }
