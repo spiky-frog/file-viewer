@@ -203,7 +203,12 @@
       </div>
 
       <!-- Status -->
-      <p id="status" class="status" role="status" aria-live="polite">
+      <p
+        id="status"
+        class="status"
+        role="status"
+        aria-live="polite"
+      >
         Waiting for selection...
       </p>
 
@@ -218,9 +223,15 @@
     const $ = id => document.getElementById(id);
 
     let currentSession = null;
-    let pairingSocket = null;
+    let phoneSession = null;
 
-    // Switch between device interfaces
+    let pairingSocket = null;
+    let phoneSocket = null;
+
+    // Prevent outdated asynchronous operations
+    // from changing the current interface.
+    let viewGeneration = 0;
+
     function showView(view) {
       $("device-selection").hidden = view !== "selection";
       $("computer-view").hidden = view !== "computer";
@@ -243,8 +254,18 @@
       }
     }
 
-    // Close the existing WebSocket connection
-    function disconnectWebSocket() {
+    function websocketURL(sessionId) {
+      const protocol =
+        location.protocol === "https:" ? "wss:" : "ws:";
+
+      return (
+        `${protocol}//${location.host}` +
+        `/api/sessions/${sessionId}/ws`
+      );
+    }
+
+    // Close the computer's WebSocket.
+    function disconnectComputerSocket() {
       if (pairingSocket) {
         const socket = pairingSocket;
         pairingSocket = null;
@@ -252,25 +273,30 @@
       }
     }
 
-    // Connect computer to its Durable Object room
-    function connectWebSocket() {
+    // Close the phone's WebSocket.
+    function disconnectPhoneSocket() {
+      if (phoneSocket) {
+        const socket = phoneSocket;
+        phoneSocket = null;
+        socket.close();
+      }
+    }
+
+    // Computer WebSocket connection
+    function connectComputerSocket() {
       if (!currentSession) return;
 
-      disconnectWebSocket();
+      disconnectComputerSocket();
 
       const session = currentSession;
 
-      const protocol =
-        location.protocol === "https:" ? "wss:" : "ws:";
-
-      const url =
-        `${protocol}//${location.host}` +
-        `/api/sessions/${session.sessionId}/ws`;
-
-      const socket = new WebSocket(url, [
-        "file-viewer",
-        `token.${session.ownerToken}`
-      ]);
+      const socket = new WebSocket(
+        websocketURL(session.sessionId),
+        [
+          "file-viewer",
+          `token.${session.ownerToken}`
+        ]
+      );
 
       pairingSocket = socket;
 
@@ -298,14 +324,14 @@
             )
           ) {
             setStatus(
-              "Phone connected successfully!",
+              "Phone paired successfully!",
               "success"
             );
           }
 
         } catch (error) {
           console.error(
-            "Invalid WebSocket message:",
+            "Invalid computer WebSocket message:",
             error
           );
         }
@@ -314,7 +340,10 @@
       socket.onerror = error => {
         if (pairingSocket !== socket) return;
 
-        console.error("WebSocket error:", error);
+        console.error(
+          "Computer WebSocket error:",
+          error
+        );
       };
 
       socket.onclose = () => {
@@ -323,16 +352,93 @@
         pairingSocket = null;
 
         setStatus(
-          "Pairing connection closed. Create a new session.",
+          "Computer connection closed. Create a new session.",
           "error"
         );
       };
     }
 
-    // Computer creates a new pairing session
+    // Phone WebSocket connection
+    function connectPhoneSocket() {
+      if (!phoneSession) return;
+
+      disconnectPhoneSocket();
+
+      const session = phoneSession;
+
+      const socket = new WebSocket(
+        websocketURL(session.sessionId),
+        [
+          "file-viewer",
+          `token.${session.phoneToken}`
+        ]
+      );
+
+      phoneSocket = socket;
+
+      setStatus(
+        "Pairing accepted. Establishing real-time connection..."
+      );
+
+      socket.onopen = () => {
+        if (phoneSocket !== socket) return;
+
+        setStatus(
+          "Connected to pairing service!",
+          "success"
+        );
+      };
+
+      socket.onmessage = event => {
+        if (phoneSocket !== socket) return;
+
+        try {
+          const message = JSON.parse(event.data);
+
+          if (
+            message.type === "session-status" &&
+            message.role === "phone"
+          ) {
+            setStatus(
+              "Phone WebSocket authenticated successfully!",
+              "success"
+            );
+          }
+
+        } catch (error) {
+          console.error(
+            "Invalid phone WebSocket message:",
+            error
+          );
+        }
+      };
+
+      socket.onerror = error => {
+        if (phoneSocket !== socket) return;
+
+        console.error(
+          "Phone WebSocket error:",
+          error
+        );
+      };
+
+      socket.onclose = () => {
+        if (phoneSocket !== socket) return;
+
+        phoneSocket = null;
+
+        setStatus(
+          "Phone connection closed. Create a new pairing session.",
+          "error"
+        );
+      };
+    }
+
+    // Computer creates pairing session
     $("computer-button").addEventListener(
       "click",
       async () => {
+        const generation = viewGeneration;
         const button = $("computer-button");
 
         button.disabled = true;
@@ -348,25 +454,29 @@
             throw new Error("Could not create session");
           }
 
-          currentSession = await response.json();
+          const session = await response.json();
+
+          if (generation !== viewGeneration) return;
+
+          currentSession = session;
 
           $("session-id").textContent =
-            currentSession.sessionId;
+            session.sessionId;
 
           $("pairing-token").textContent =
-            currentSession.pairingToken;
+            session.pairingToken;
 
           $("session-expiry").textContent =
             new Date(
-              currentSession.expiresAt
+              session.expiresAt
             ).toLocaleTimeString();
 
           showView("computer");
-
-          // Establish real-time WebSocket connection
-          connectWebSocket();
+          connectComputerSocket();
 
         } catch (error) {
+          if (generation !== viewGeneration) return;
+
           console.error(error);
 
           setStatus(
@@ -379,7 +489,7 @@
       }
     );
 
-    // Show the phone pairing form
+    // Phone mode
     $("phone-button").addEventListener("click", () => {
       showView("phone");
 
@@ -388,11 +498,13 @@
       );
     });
 
-    // Phone joins the pairing session
+    // Phone joins pairing session
     $("pairing-form").addEventListener(
       "submit",
       async event => {
         event.preventDefault();
+
+        const generation = viewGeneration;
 
         const sessionId =
           $("phone-session-id")
@@ -403,9 +515,10 @@
             .value.trim().toLowerCase();
 
         const button = $("join-button");
+
         button.disabled = true;
 
-        setStatus("Connecting to computer...");
+        setStatus("Pairing with computer...");
 
         try {
           const response = await fetch(
@@ -426,18 +539,38 @@
             throw new Error("Pairing failed");
           }
 
-          setStatus(
-            "Success! Your phone has joined the pairing session.",
-            "success"
-          );
+          const result = await response.json();
 
+          if (generation !== viewGeneration) return;
+
+          if (
+            !result.success ||
+            typeof result.phoneToken !== "string" ||
+            !/^[0-9a-f]{64}$/.test(result.phoneToken)
+          ) {
+            throw new Error("Invalid pairing response");
+          }
+
+          // Store phone credential in memory only.
+          phoneSession = {
+            sessionId,
+            phoneToken: result.phoneToken
+          };
+
+          // Hide the form and clear its secrets.
           $("pairing-form").hidden = true;
+          $("pairing-form").reset();
+
+          // Authenticate the phone's WebSocket.
+          connectPhoneSocket();
 
         } catch (error) {
+          if (generation !== viewGeneration) return;
+
           console.error(error);
 
           setStatus(
-            "Could not pair. Check the details and try again.",
+            "Could not connect. Check the pairing details.",
             "error"
           );
 
@@ -448,9 +581,17 @@
 
     // Return to device selection
     $("back-button").addEventListener("click", () => {
-      disconnectWebSocket();
+      viewGeneration++;
+
+      disconnectComputerSocket();
+      disconnectPhoneSocket();
 
       currentSession = null;
+      phoneSession = null;
+
+      $("session-id").textContent = "";
+      $("pairing-token").textContent = "";
+      $("session-expiry").textContent = "";
 
       $("pairing-form").reset();
       $("pairing-form").hidden = false;
@@ -460,9 +601,10 @@
       showView("selection");
     });
 
-    // Close WebSocket when leaving the page
+    // Close connections when leaving the website.
     window.addEventListener("pagehide", () => {
-      disconnectWebSocket();
+      disconnectComputerSocket();
+      disconnectPhoneSocket();
     });
   </script>
 </body>
