@@ -3,8 +3,9 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>File Viewer</title>
+
   <style>
     * { box-sizing: border-box; }
 
@@ -45,14 +46,33 @@
       margin: 8px;
     }
 
-    button:hover { background: #0066d6; }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
 
     #status {
       margin-top: 20px;
       color: #666;
     }
+
+    .details {
+      margin-top: 20px;
+      padding: 16px;
+      background: #f5f5f7;
+      border-radius: 10px;
+      overflow-wrap: anywhere;
+      text-align: left;
+    }
+
+    .details p { margin: 8px 0; }
+
+    .details code { font-size: 12px; }
+
+    [hidden] { display: none !important; }
   </style>
 </head>
+
 <body>
   <main class="container">
     <h1>File Viewer</h1>
@@ -62,32 +82,99 @@
 
     <div class="card">
       <h2>Choose your device</h2>
-      <p>How are you using File Viewer?</p>
 
-      <button onclick="selectMode('computer')">
-        I'm on my computer
-      </button>
+      <div id="device-selection">
+        <button id="computer-button">
+          I'm on my computer
+        </button>
 
-      <button onclick="selectMode('phone')">
-        I'm on my phone
-      </button>
+        <button id="phone-button">
+          I'm on my phone
+        </button>
+      </div>
 
       <p id="status">Waiting for selection...</p>
+
+      <div id="session-details" class="details" hidden>
+        <h3>Pairing session created</h3>
+
+        <p>
+          <strong>Session ID:</strong>
+          <code id="session-id"></code>
+        </p>
+
+        <p>
+          <strong>Expires:</strong>
+          <span id="session-expiry"></span>
+        </p>
+
+        <p>
+          Your session is ready. Phone pairing will be
+          added in the next steps.
+        </p>
+      </div>
     </div>
   </main>
 
   <script>
-    function selectMode(mode) {
-      const status = document.getElementById('status');
+    const computerButton =
+      document.getElementById("computer-button");
 
-      if (mode === 'computer') {
-        status.textContent =
-          'Computer mode selected. Ready for pairing setup.';
-      } else {
-        status.textContent =
-          'Phone mode selected. Ready for file selection.';
+    const phoneButton =
+      document.getElementById("phone-button");
+
+    const statusElement =
+      document.getElementById("status");
+
+    const sessionDetails =
+      document.getElementById("session-details");
+
+    computerButton.addEventListener("click", async () => {
+      computerButton.disabled = true;
+      sessionDetails.hidden = true;
+      statusElement.textContent = "Creating pairing session...";
+
+      try {
+        const response = await fetch("/api/sessions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          cache: "no-store"
+        });
+
+        if (!response.ok) {
+          throw new Error("Session creation failed");
+        }
+
+        const session = await response.json();
+
+        document.getElementById("session-id").textContent =
+          session.sessionId;
+
+        document.getElementById("session-expiry").textContent =
+          new Date(session.expiresAt).toLocaleTimeString();
+
+        statusElement.textContent = "Session created successfully!";
+        sessionDetails.hidden = false;
+
+        // Keep the pairing token in memory for later use.
+        // Never put it in the URL or localStorage.
+        window.currentSession = session;
+
+      } catch (error) {
+        statusElement.textContent =
+          "Could not create a pairing session. Please try again.";
+
+        console.error(error);
+        computerButton.disabled = false;
       }
-    }
+    });
+
+    phoneButton.addEventListener("click", () => {
+      statusElement.textContent =
+        "Phone pairing will be available soon.";
+    });
   </script>
 </body>
 </html>
